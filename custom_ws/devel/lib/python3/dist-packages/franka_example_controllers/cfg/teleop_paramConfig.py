@@ -1,0 +1,1 @@
+/home/sysgen/Project_Lab_P5/custom_ws/devel/.private/franka_example_controllers/lib/python3/dist-packages/franka_example_controllers/cfg/teleop_paramConfig.py

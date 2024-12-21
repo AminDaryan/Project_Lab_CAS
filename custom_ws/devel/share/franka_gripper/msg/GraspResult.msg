@@ -1,0 +1,1 @@
+/home/sysgen/Project_Lab_P5/custom_ws/devel/.private/franka_gripper/share/franka_gripper/msg/GraspResult.msg

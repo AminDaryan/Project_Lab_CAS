@@ -1,0 +1,1 @@
+/usr/bin/c++ -fPIC   -shared -Wl,-soname,libgtest_main.so -o ../lib/libgtest_main.so CMakeFiles/gtest_main.dir/src/gtest_main.cc.o  -Wl,-rpath,/home/sysgen/Project_Lab_P5/custom_ws/build/my_franka_app/gtest/lib ../lib/libgtest.so -lpthread 

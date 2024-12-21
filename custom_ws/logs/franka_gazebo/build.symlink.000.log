@@ -1,0 +1,5 @@
+Symlinking /home/sysgen/Project_Lab_P5/custom_ws/devel/lib/libfranka_hw_sim.so
+Symlinking /home/sysgen/Project_Lab_P5/custom_ws/devel/lib/libfranka_gripper_sim.so
+Symlinking /home/sysgen/Project_Lab_P5/custom_ws/devel/lib/pkgconfig/franka_gazebo.pc
+Symlinking /home/sysgen/Project_Lab_P5/custom_ws/devel/share/franka_gazebo/cmake/franka_gazeboConfig.cmake
+Symlinking /home/sysgen/Project_Lab_P5/custom_ws/devel/share/franka_gazebo/cmake/franka_gazeboConfig-version.cmake

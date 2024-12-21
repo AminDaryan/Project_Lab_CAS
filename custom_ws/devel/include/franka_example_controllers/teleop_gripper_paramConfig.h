@@ -1,0 +1,1 @@
+/home/sysgen/Project_Lab_P5/custom_ws/devel/.private/franka_example_controllers/include/franka_example_controllers/teleop_gripper_paramConfig.h

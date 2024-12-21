@@ -1,0 +1,1 @@
+/home/sysgen/Project_Lab_P5/custom_ws/devel/.private/franka_gripper/lib/python3/dist-packages/franka_gripper/msg/_GraspAction.py
