@@ -1,0 +1,13 @@
+name: realsense-yolov5-env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.8
+  - pip
+  - numpy>=1.19.0
+  - opencv
+  - pip:
+      - torch>=1.7.0
+      - torchvision>=0.8.0
+      - pyrealsense2
