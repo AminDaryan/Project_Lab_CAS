@@ -8,6 +8,7 @@
 *02.01.2025*
 - Added Object detection sample code which detects general objects
 - Some files were added so that the devs can install and setup the project more easily even on the windows
+- Added Blue Cuboid detection code with YoloV5 or V11 library.
 
 
 **Todo**:
