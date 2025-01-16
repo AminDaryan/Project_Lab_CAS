@@ -17,6 +17,8 @@
   - The relative weights of the trained model and all the other specifications are in the [run](run) folder.
 - Added code to use the cuboid detection model in [Inference_Blue_cuboid_model file](Inference_Blue_cuboid_model.py).
 
+*16.01.2025*
+- Added object coordinate calculation code for the blue cuboid in [Blue_cuboid_object_coordinate_detection file](Blue_cuboid_object_coordinate_detection.py)
 
 
 **Todo**:
