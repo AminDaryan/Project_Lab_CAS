@@ -10,6 +10,12 @@
 - Some files were added so that the devs can install and setup the project more easily even on the windows
 - Added Blue Cuboid detection code with YoloV5 or V11 library.
 
+*15.01.2025*
+- Trained the data samples (Images) in roboflow.com
+- Using [this video](https://www.youtube.com/watch?v=m9fH9OWn8YM) to train the model in [google python colab](https://colab.research.google.com/drive/1u9PslhvYOG_QUzIM-CZxvZ3ivJpVOuyi#scrollTo=9b8qaAPqL-jr)
+- Added code to use the cuboid detection model in Inference_Blue_cuboid_model.py
+
+
 
 **Todo**:
 

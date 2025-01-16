@@ -1,29 +1,49 @@
-from ultralytics import YOLO
+import pyrealsense2 as rs
 import cv2
 import numpy as np
+from ultralytics import YOLO
 
-# Load the trained YOLOv11 model
+
+# Load the YOLO model with your trained weights
 model = YOLO('runs/train/weights/best.pt')
-model.to('cuda')
 
-# Load an image
-image_path = 'dataset/image1.png'
-image = cv2.imread(image_path)
+# Configure the Intel RealSense pipeline
+pipeline = rs.pipeline()
+config = rs.config()
 
-# Perform object detection
-results = model(image)
+# Enable color stream
+config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
-# Render the results on the image
-annotated_image = np.squeeze(results[0].plot())
+# Start the pipeline
+pipeline.start(config)
 
-# Display the image with detections
-cv2.imshow('Detection Results', annotated_image)
+try:
+    print("Starting object detection...")
+    while True:
+        # Wait for a coherent frame
+        frames = pipeline.wait_for_frames()
+        color_frame = frames.get_color_frame()
 
-# Save the annotated image to disk
-output_path = 'output_image.jpg'
-cv2.imwrite(output_path, annotated_image)
-print(f"Detection results saved to {output_path}")
+        if not color_frame:
+            continue
 
-# Wait for a key press and close the display window
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+        # Convert RealSense frame to numpy array
+        color_image = np.asanyarray(color_frame.get_data())
+
+        # Perform object detection using YOLO
+        results = model(color_image)
+
+        # Render results on the image
+        annotated_image = results[0].plot()
+
+        # Display the annotated image
+        cv2.imshow("D455 Object Detection", annotated_image)
+
+        # Exit on pressing 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+finally:
+    # Stop the RealSense pipeline and close OpenCV windows
+    pipeline.stop()
+    cv2.destroyAllWindows()
