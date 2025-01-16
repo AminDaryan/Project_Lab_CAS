@@ -11,9 +11,11 @@
 - Added Blue Cuboid detection code with YoloV5 or V11 library.
 
 *15.01.2025*
-- Trained the data samples (Images) in roboflow.com
-- Using [this video](https://www.youtube.com/watch?v=m9fH9OWn8YM) to train the model in [google python colab](https://colab.research.google.com/drive/1u9PslhvYOG_QUzIM-CZxvZ3ivJpVOuyi#scrollTo=9b8qaAPqL-jr)
-- Added code to use the cuboid detection model in Inference_Blue_cuboid_model.py
+- Trained the data samples (Images) in roboflow.com.
+  - The dataset is in [dataset](dataset) folder
+- Using [this video](https://www.youtube.com/watch?v=m9fH9OWn8YM) to train the model in [google python colab](https://colab.research.google.com/drive/1u9PslhvYOG_QUzIM-CZxvZ3ivJpVOuyi#scrollTo=9b8qaAPqL-jr).
+  - The relative weights of the trained model and all the other specifications are in the [run](run) folder.
+- Added code to use the cuboid detection model in [Inference_Blue_cuboid_model file](Inference_Blue_cuboid_model.py).
 
 
 
