@@ -11,7 +11,8 @@
 - Added Blue Cuboid detection code with YoloV5 or V11 library.
 
 *15.01.2025*
-- Trained the data samples (Images) in roboflow.com.
+- Using [video_to_dataset_pics file](video_to_dataset_pics.py) to get the cuboid video to images dataset.
+- The the data samples (Images) were annotated and then trained in [roboflow.com](roboflow.com).
   - The dataset is in [dataset](dataset) folder
 - Using [this video](https://www.youtube.com/watch?v=m9fH9OWn8YM) to train the model in [google python colab](https://colab.research.google.com/drive/1u9PslhvYOG_QUzIM-CZxvZ3ivJpVOuyi#scrollTo=9b8qaAPqL-jr).
   - The relative weights of the trained model and all the other specifications are in the [run](run) folder.
@@ -20,6 +21,9 @@
 *16.01.2025*
 - Added object coordinate calculation code for the blue cuboid in [Blue_cuboid_object_coordinate_detection file](Blue_cuboid_object_coordinate_detection.py)
 
+*13.03.2025*
+- Using [video_to_dataset_pics file](video_to_dataset_pics.py) to get the cube with April tags video to images dataset.
+- The the data samples (Images) were annotated and then trained in [roboflow.com](roboflow.com).
 
 **Todo**:
 
