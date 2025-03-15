@@ -25,6 +25,9 @@
 - Using [video_to_dataset_pics file](video_to_dataset_pics.py) to get the cube with April tags video to images dataset.
 - The the data samples (Images) were annotated and then trained in [roboflow.com](roboflow.com).
 
+*15.03.2025*
+- Using [train_model file](train_model.py) the images recieved in files: train, valid and test from roboflow.com are trained.
+
 **Todo**:
 
 - Work on getting object coordinates using the camera and OpenCV

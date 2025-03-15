@@ -20,7 +20,7 @@ frame_count = 0
 start_time = time.time()
 
 try:
-    while time.time() - start_time < 10:  # Limit to 10 seconds
+    while time.time() - start_time < 50:  # Limit to 10 seconds
         frames = pipeline.wait_for_frames()
         color_frame = frames.get_color_frame()
         if not color_frame:
@@ -41,7 +41,7 @@ try:
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
         
-        time.sleep(0.05)  # Add a delay of 0.05s between frames
+        time.sleep(0.1)  # Add a delay of 0.05s between frames
 
 finally:
     # Release the pipeline and close the OpenCV window
