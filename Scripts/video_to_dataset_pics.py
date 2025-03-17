@@ -12,7 +12,7 @@ config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
 pipeline.start(config)
 
 # Folder to save images
-image_folder = 'dataset/images'
+image_folder = 'datasets/images'
 os.makedirs(image_folder, exist_ok=True)
 
 # Capture frames from the RealSense camera

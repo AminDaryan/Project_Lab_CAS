@@ -3,10 +3,10 @@ channels:
   - defaults
   - conda-forge
 dependencies:
-  - python=3.8
-  - pip
+  - python=3.9.13
   - numpy>=1.19.0
   - opencv
+  - pip
   - pip:
       - torch>=1.7.0
       - torchvision>=0.8.0
