@@ -8,7 +8,7 @@ from ultralytics import YOLO
 os.system('cls' if os.name == 'nt' else 'clear')
 
 # Load YOLO model for detecting the cuboid
-model = YOLO("runs/detect/train4/weights/best.pt")  # Replace with your trained model path
+model = YOLO("runs/detect/train/weights/best.pt")  # Replace with your trained model path
 model.to('cuda')  # Use GPU for faster inference
 
 # Configure Intel RealSense pipeline

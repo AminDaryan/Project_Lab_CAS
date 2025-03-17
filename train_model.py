@@ -16,7 +16,7 @@ if __name__ == "__main__":
     
     # Train the model
     train_results = model.train(
-        data=os.path.abspath(os.path.join("datasets/Target_Cube_Object_Detection_2", "data.yaml")),  # path to dataset YAML
+        data=os.path.abspath(os.path.join("datasets/Target_Cube_Object_Detection_3", "data.yaml")),  # path to dataset YAML
         epochs=100,  # number of training epochs
         imgsz=640,  # training image size
         device="cpu",  # device to run on, i.e. device=0 or device=0,1,2,3 or device=cpu
