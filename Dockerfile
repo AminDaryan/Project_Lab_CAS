@@ -5,16 +5,24 @@ FROM python:3.9.13-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y libopencv-dev
-RUN apt-get install -y libboost-all-dev
-RUN apt-get install -y libusb-1.0-0-dev
-RUN apt-get install -y cmake
-RUN apt-get install -y git
-RUN apt-get install -y curl
-RUN apt-get install -y librealsense2 librealsense2-dev
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg2 \
+    lsb-release \
+    libusb-1.0-0-dev \
+    cmake \
+    git \
+    libopencv-dev \
+    libboost-all-dev
 
+# Add Intel RealSense SDK repository and install librealsense2
+RUN curl -sSL https://github.com/IntelRealSense/librealsense/releases/download/v2.50.0/Librealsense-2.50.0-Ubuntu-20.04.deb \
+    -o librealsense2.deb \
+    && dpkg -i librealsense2.deb \
+    && apt-get install -f -y \
+    && rm librealsense2.deb
 
-# Install Python dependencies
+# Install Python dependencies from the requirements file
 COPY requirements.txt /tmp/
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
