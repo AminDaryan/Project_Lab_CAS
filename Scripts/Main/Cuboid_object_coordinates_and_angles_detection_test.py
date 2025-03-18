@@ -87,24 +87,24 @@ if pipeline is None:
 align = rs.align(rs.stream.color)
 
 # Load CAD file
-cad_file_path = "Scripts\\Main\\cuboid.stl"  # Path to your CAD file
+cad_file_path = "Scripts\\Main\\cuboid.ply"  # Path to your CAD file
 try:
     mesh = trimesh.load_mesh(cad_file_path)
     print("CAD file loaded successfully")
     
     # Print vertices for debugging
     print(f"Number of vertices: {len(mesh.vertices)}")
-    for i, vertex in enumerate(mesh.vertices):
+    for i, vertex in enumerate(mesh.vertices[:8]):  # Print first 8 vertices only
         print(f"Vertex {i}: {vertex}")
     
 except Exception as e:
     print(f"Error loading CAD file: {e}")
-    # Create a simple cuboid model based on your 5mm x 5mm x 3mm dimensions
-    # Half dimensions for a centered cuboid
-    width, height, depth = 2.5, 2.5, 1.5  # in mm
+    # Create a simple cuboid model based on corrected 5cm x 5cm x 3cm dimensions
+    # Half dimensions for a centered cuboid (in mm)
+    width, height, depth = 25.0, 25.0, 15.0  # 50mm/2, 50mm/2, 30mm/2
     
     # Define 8 corners of the cuboid (centered at origin)
-    mesh = trimesh.Trimesh(vertices=np.array([
+    vertices = np.array([
         [-width, -height, -depth],  # 0: back bottom left
         [width, -height, -depth],   # 1: back bottom right
         [width, height, -depth],    # 2: back top right
@@ -113,8 +113,20 @@ except Exception as e:
         [width, -height, depth],    # 5: front bottom right
         [width, height, depth],     # 6: front top right
         [-width, height, depth]     # 7: front top left
-    ]))
-    print("Created cuboid model with dimensions 5mm x 5mm x 3mm")
+    ])
+    
+    # Define faces using triangle mesh (12 triangles for 6 faces)
+    faces = np.array([
+        [0, 1, 2], [0, 2, 3],  # Back face
+        [4, 6, 5], [4, 7, 6],  # Front face
+        [0, 3, 7], [0, 7, 4],  # Left face
+        [1, 5, 6], [1, 6, 2],  # Right face
+        [3, 2, 6], [3, 6, 7],  # Top face
+        [0, 4, 5], [0, 5, 1]   # Bottom face
+    ])
+    
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+    print(f"Created cuboid model with dimensions 5cm x 5cm x 3cm")
 
 # Extract 3D vertices
 object_points = np.array(mesh.vertices, dtype=np.float32)
@@ -122,11 +134,10 @@ object_points = np.array(mesh.vertices, dtype=np.float32)
 # Print the cuboid model dimensions
 min_coords = np.min(object_points, axis=0)
 max_coords = np.max(object_points, axis=0)
-dimensions = max_coords - min_coords
-print(f"Model dimensions: {dimensions[0]:.2f}mm x {dimensions[1]:.2f}mm x {dimensions[2]:.2f}mm")
+dimensions = (max_coords - min_coords) * 100  # Convert back to mm for display
+print(f"Model dimensions: {dimensions[0]:.2f}cm x {dimensions[1]:.2f}cm x {dimensions[2]:.2f}cm")
 
 # Define the front face vertices (for better visualization)
-# This assumes the cuboid is centered at the origin and aligned with the coordinate axes
 front_face_idx = [4, 5, 6, 7]  # Front face vertices (the ones where z is positive)
 front_face_points = object_points[front_face_idx]
 
@@ -179,8 +190,8 @@ def get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics):
     return corners_2d, center_depth
 
 # Function to project 3D points to 2D
-def project_3d_to_2d(object_points, rotation_matrix, translation_vector, camera_matrix, dist_coeffs):
-    projected_points, _ = cv2.projectPoints(object_points, rotation_matrix, translation_vector, camera_matrix, dist_coeffs)
+def project_3d_to_2d(object_points_input, rotation_matrix, translation_vector):
+    projected_points, _ = cv2.projectPoints(object_points_input, rotation_matrix, translation_vector, camera_matrix, dist_coeffs)
     return projected_points.reshape(-1, 2)
 
 try:
@@ -226,6 +237,7 @@ try:
             # Run YOLO detection
             results = model(color_image, conf=0.25)
             
+            print(f"detections:  {len(results[0].boxes)}")
             # Process detections
             if len(results[0].boxes) > 0:
                 print(f"Found {len(results[0].boxes)} detections")
@@ -237,7 +249,7 @@ try:
                 
                 # Draw the original bounding box
                 cv2.rectangle(display_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                
+
                 # Get corner points
                 corner_data = get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics)
                 if corner_data is None:
@@ -252,34 +264,61 @@ try:
                 aspect_ratio = bbox_width / bbox_height if bbox_height != 0 else 0
                 print(f"Bounding box aspect ratio: {aspect_ratio:.2f}")
                 
-                # Select the appropriate 3D points based on the view
-                # For simplicity, we're using the front face points, which is appropriate if
-                # the cuboid is being viewed from the front
+                # Define model points for PnP - use the front face of the cuboid
+                # Using 5cm x 5cm x 3cm dimensions (half dimensions in meters)
                 model_points = np.array([
-                    [-2.5, -2.5, 1.5],  # Bottom left, front
-                    [2.5, -2.5, 1.5],   # Bottom right, front
-                    [2.5, 2.5, 1.5],    # Top right, front
-                    [-2.5, 2.5, 1.5]    # Top left, front
+                    [-0.025, -0.025, 0.015],  # Front bottom left
+                    [0.025, -0.025, 0.015],   # Front bottom right
+                    [0.025, 0.025, 0.015],    # Front top right
+                    [-0.025, 0.025, 0.015]    # Front top left
                 ], dtype=np.float32)
                 
-                # Solve PnP using the front face points (should be visible in the image)
-                success, rvec, tvec = cv2.solvePnP(model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
+                # Try different PnP methods if one fails
+                pnp_methods = [cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_EPNP, cv2.SOLVEPNP_SQPNP]
+                success = False
                 
+                for method in pnp_methods:
+                    try:
+                        success, rvec, tvec = cv2.solvePnP(
+                            model_points, 
+                            image_points, 
+                            camera_matrix, 
+                            dist_coeffs, 
+                            flags=method
+                        )
+                        
+                        if success:
+                            print(f"PnP solved with method {method}")
+                            break
+                    except Exception as e:
+                        print(f"PnP method {method} failed: {e}")
+                        continue
+
                 if not success:
-                    print("PnP solver failed")
+                    print("All PnP methods failed")
                     continue
                 
-                # Convert rotation vector to rotation matrix
-                rotation_matrix, _ = cv2.Rodrigues(rvec)
+                print(f"PnP solver result - success: {success}, rotation: {rvec.flatten()}, translation: {tvec.flatten()}")
                 
                 # Project all vertices of the 3D model into 2D for visualization
-                projected_points = project_3d_to_2d(object_points, rvec, tvec, camera_matrix, dist_coeffs)
-                
-                # Draw the projected model points
-                for point in projected_points:
-                    cv2.circle(display_image, tuple(point.astype(int)), 3, (255, 0, 255), -1)  # Magenta points
-                
-                # Draw the cuboid edges
+                projected_points = project_3d_to_2d(object_points, rvec, tvec)
+
+                print(f"object_points: {object_points}")
+
+                # First draw the projected model vertices (magenta points)
+                for i, point in enumerate(projected_points):
+                    point_int = tuple(np.round(point).astype(int))
+                    # Check if point is within image boundaries
+                    if 0 <= point_int[0] < display_image.shape[1] and 0 <= point_int[1] < display_image.shape[0]:
+                        cv2.circle(display_image, point_int, 3, (255, 0, 255), -1)  # Magenta points
+                        # Optional: label points
+                        cv2.putText(display_image, str(i), point_int, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+
+                # FIRST draw the yellow wireframe cuboid (draw this BEFORE axes)
+                yellow_cuboid_color = (0, 255, 255)  # Pure yellow in BGR
+                yellow_cuboid_thickness = 2  # Thicker lines for visibility
+
+                # Define the edges of the cuboid
                 edges = [
                     # Bottom face
                     (0, 1), (1, 2), (2, 3), (3, 0),
@@ -288,28 +327,51 @@ try:
                     # Connecting edges
                     (0, 4), (1, 5), (2, 6), (3, 7)
                 ]
-                
+
+                # Draw the yellow wireframe cuboid with guaranteed high visibility
                 for edge in edges:
-                    p1 = tuple(projected_points[edge[0]].astype(int))
-                    p2 = tuple(projected_points[edge[1]].astype(int))
-                    cv2.line(display_image, p1, p2, (255, 165, 0), 1)  # Orange lines
-                
-                # Draw the axes (X, Y, Z)
-                axis_length = 5.0  # 5mm axis length
+                    try:
+                        p1 = tuple(np.round(projected_points[edge[0]]).astype(int))
+                        p2 = tuple(np.round(projected_points[edge[1]]).astype(int))
+                        # Check if points are within image boundaries
+                        if (0 <= p1[0] < display_image.shape[1] and 0 <= p1[1] < display_image.shape[0] and
+                            0 <= p2[0] < display_image.shape[1] and 0 <= p2[1] < display_image.shape[0]):
+                            cv2.line(display_image, p1, p2, yellow_cuboid_color, yellow_cuboid_thickness)
+                    except Exception as e:
+                        print(f"Error drawing yellow cuboid edge {edge}: {e}")
+
+                # THEN draw the axes (after the yellow cuboid)
+                axis_length = 0.1  # 10cm axis length for better visibility with a 5cm object
                 axes = np.array([
-                    [0, 0, 0],
-                    [axis_length, 0, 0],
-                    [0, axis_length, 0],
-                    [0, 0, axis_length]
-                ], dtype=np.float32)  # Origin, X, Y, Z axes
-                
-                projected_axes = project_3d_to_2d(axes, rvec, tvec, camera_matrix, dist_coeffs)
-                
+                    [0, 0, 0],  # Origin
+                    [axis_length, 0, 0],  # X-axis
+                    [0, axis_length, 0],  # Y-axis
+                    [0, 0, axis_length]   # Z-axis
+                ], dtype=np.float32)
+
+                projected_axes = project_3d_to_2d(axes, rvec, tvec)
+
                 # Draw axes with thicker lines for better visibility
                 origin = tuple(projected_axes[0].astype(int))
-                cv2.line(display_image, origin, tuple(projected_axes[1].astype(int)), (0, 0, 255), 2)  # X-axis (red)
-                cv2.line(display_image, origin, tuple(projected_axes[2].astype(int)), (0, 255, 0), 2)  # Y-axis (green)
-                cv2.line(display_image, origin, tuple(projected_axes[3].astype(int)), (255, 0, 0), 2)  # Z-axis (blue)
+                # Check if origin is within image boundaries
+                if 0 <= origin[0] < display_image.shape[1] and 0 <= origin[1] < display_image.shape[0]:
+                    # X-axis (red)
+                    p_x = tuple(projected_axes[1].astype(int))
+                    if 0 <= p_x[0] < display_image.shape[1] and 0 <= p_x[1] < display_image.shape[0]:
+                        cv2.line(display_image, origin, p_x, (0, 0, 255), 2)
+                        cv2.putText(display_image, "X", p_x, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+                    
+                    # Y-axis (green)
+                    p_y = tuple(projected_axes[2].astype(int))
+                    if 0 <= p_y[0] < display_image.shape[1] and 0 <= p_y[1] < display_image.shape[0]:
+                        cv2.line(display_image, origin, p_y, (0, 255, 0), 2)
+                        cv2.putText(display_image, "Y", p_y, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                    
+                    # Z-axis (blue)
+                    p_z = tuple(projected_axes[3].astype(int))
+                    if 0 <= p_z[0] < display_image.shape[1] and 0 <= p_z[1] < display_image.shape[0]:
+                        cv2.line(display_image, origin, p_z, (255, 0, 0), 2)
+                        cv2.putText(display_image, "Z", p_z, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
                 
                 # Display translation and quaternion info
                 position = tvec.flatten()
@@ -334,11 +396,13 @@ try:
             print(f"Error: {e}")
             retry_count += 1
             if retry_count >= max_retries:
-                print("Maximum retries reached. Exiting...")
+                print(f"Maximum retries reached ({max_retries}). Exiting...")
                 break
 except KeyboardInterrupt:
     print("Program interrupted.")
 finally:
-    # Clean up
+    # Clean up resources
+    print("Cleaning up resources...")
     pipeline.stop()
     cv2.destroyAllWindows()
+    print("Program ended.")
