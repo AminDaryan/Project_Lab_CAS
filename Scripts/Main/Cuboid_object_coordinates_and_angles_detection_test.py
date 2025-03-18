@@ -86,43 +86,97 @@ if pipeline is None:
 # Align depth to color
 align = rs.align(rs.stream.color)
 
-# Load CAD file (e.g., .obj) using trimesh
-cad_file_path = "Scripts\\Main\\cuboid.stl"  # Replace with the actual path to your CAD file
-mesh = trimesh.load_mesh(cad_file_path)
+# Load CAD file
+cad_file_path = "Scripts\\Main\\cuboid.stl"  # Path to your CAD file
+try:
+    mesh = trimesh.load_mesh(cad_file_path)
+    print("CAD file loaded successfully")
+    
+    # Print vertices for debugging
+    print(f"Number of vertices: {len(mesh.vertices)}")
+    for i, vertex in enumerate(mesh.vertices):
+        print(f"Vertex {i}: {vertex}")
+    
+except Exception as e:
+    print(f"Error loading CAD file: {e}")
+    # Create a simple cuboid model based on your 5mm x 5mm x 3mm dimensions
+    # Half dimensions for a centered cuboid
+    width, height, depth = 2.5, 2.5, 1.5  # in mm
+    
+    # Define 8 corners of the cuboid (centered at origin)
+    mesh = trimesh.Trimesh(vertices=np.array([
+        [-width, -height, -depth],  # 0: back bottom left
+        [width, -height, -depth],   # 1: back bottom right
+        [width, height, -depth],    # 2: back top right
+        [-width, height, -depth],   # 3: back top left
+        [-width, -height, depth],   # 4: front bottom left
+        [width, -height, depth],    # 5: front bottom right
+        [width, height, depth],     # 6: front top right
+        [-width, height, depth]     # 7: front top left
+    ]))
+    print("Created cuboid model with dimensions 5mm x 5mm x 3mm")
 
-# Extract 3D vertices (coordinates of the model)
-object_points = mesh.vertices  # These are the 3D coordinates of the object model
+# Extract 3D vertices
+object_points = np.array(mesh.vertices, dtype=np.float32)
 
-# If the object model has faces, you can also extract the faces for visualization, if needed.
-faces = mesh.faces  # List of faces for the 3D model
+# Print the cuboid model dimensions
+min_coords = np.min(object_points, axis=0)
+max_coords = np.max(object_points, axis=0)
+dimensions = max_coords - min_coords
+print(f"Model dimensions: {dimensions[0]:.2f}mm x {dimensions[1]:.2f}mm x {dimensions[2]:.2f}mm")
+
+# Define the front face vertices (for better visualization)
+# This assumes the cuboid is centered at the origin and aligned with the coordinate axes
+front_face_idx = [4, 5, 6, 7]  # Front face vertices (the ones where z is positive)
+front_face_points = object_points[front_face_idx]
 
 # Function to get the corner points from the detected bounding box
-def get_corner_points(x1, y1, x2, y2, depth_frame):
-    # Get the depth at the corners
-    depth_corners = np.array([
-        depth_frame.get_distance(x1, y1),  # Top-left
-        depth_frame.get_distance(x2, y1),  # Top-right
-        depth_frame.get_distance(x2, y2),  # Bottom-right
-        depth_frame.get_distance(x1, y2)   # Bottom-left
-    ])
-    
-    # Filter out invalid depth readings
-    valid_depth = depth_corners[depth_corners > 0]
-    if len(valid_depth) == 0:
-        return None
-    
-    # Use the average depth where valid
-    avg_depth = np.mean(valid_depth)
-    
-    # Create 2D points from bounding box
-    image_points = np.array([
+def get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics):
+    # Define the four corners of the bounding box
+    corners_2d = np.array([
         [x1, y1],  # Top-left
         [x2, y1],  # Top-right
         [x2, y2],  # Bottom-right
         [x1, y2]   # Bottom-left
     ], dtype=np.float32)
     
-    return image_points, avg_depth
+    # Get the center of the bounding box
+    center_x = (x1 + x2) // 2
+    center_y = (y1 + y2) // 2
+    
+    # Get depth at the center point, which is often more reliable
+    center_depth = depth_frame.get_distance(center_x, center_y)
+    
+    # If center depth is invalid, try to get depth from corners
+    if center_depth <= 0:
+        # Try each corner
+        depths = []
+        for corner in corners_2d:
+            cx, cy = int(corner[0]), int(corner[1])
+            d = depth_frame.get_distance(cx, cy)
+            if d > 0:
+                depths.append(d)
+        
+        # If we found any valid depths, use their average
+        if depths:
+            center_depth = np.mean(depths)
+        else:
+            # If no valid depths, scan the bounding box area
+            valid_depths = []
+            for x in range(x1, x2, 5):  # Sample every 5 pixels
+                for y in range(y1, y2, 5):
+                    d = depth_frame.get_distance(x, y)
+                    if d > 0:
+                        valid_depths.append(d)
+            
+            if valid_depths:
+                center_depth = np.mean(valid_depths)
+            else:
+                return None  # No valid depth found
+    
+    print(f"Estimated object depth: {center_depth:.3f}m")
+    
+    return corners_2d, center_depth
 
 # Function to project 3D points to 2D
 def project_3d_to_2d(object_points, rotation_matrix, translation_vector, camera_matrix, dist_coeffs):
@@ -134,8 +188,8 @@ try:
     
     # Set a retry counter and frame skip
     retry_count = 0
-    max_retries = 5
-    frame_skip = 5  # Only process every 2nd frame to speed up
+    max_retries = 2
+    frame_skip = 5  # Only process every 5th frame to speed up
     
     frame_counter = 0  # Frame counter to skip frames
     
@@ -166,68 +220,103 @@ try:
             # Clone the color image for display
             display_image = color_image.copy()
             
+            # Get color intrinsics for depth calculations
+            color_intrinsics = profile.get_stream(rs.stream.color).as_video_stream_profile().get_intrinsics()
+            
             # Run YOLO detection
             results = model(color_image, conf=0.25)
             
             # Process detections
+            if len(results[0].boxes) > 0:
+                print(f"Found {len(results[0].boxes)} detections")
+                
             for detection in results[0].boxes:
                 x1, y1, x2, y2 = map(int, detection.xyxy[0].tolist())
+                confidence = detection.conf[0].item()
+                print(f"Detection confidence: {confidence:.2f}")
                 
                 # Draw the original bounding box
                 cv2.rectangle(display_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 
-                # Calculate bounding box center
-                cube_cx, cube_cy = (x1 + x2) // 2, (y1 + y2) // 2
-                
-                # Get depth at the center point
-                depth = depth_frame.get_distance(cube_cx, cube_cy)
-                
-                # Skip invalid depth readings
-                if depth <= 0:
-                    continue
-                
                 # Get corner points
-                corner_data = get_corner_points(x1, y1, x2, y2, depth_frame)
+                corner_data = get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics)
                 if corner_data is None:
+                    print("Could not get valid depth measurements for this detection")
                     continue
                     
-                image_points, avg_depth = corner_data
+                image_points, depth = corner_data
                 
-                # For more accurate pose estimation, use the detected corners as reference
-                full_image_points = np.zeros((len(object_points), 2), dtype=np.float32)
+                # Calculate the aspect ratio of the bounding box
+                bbox_width = x2 - x1
+                bbox_height = y2 - y1
+                aspect_ratio = bbox_width / bbox_height if bbox_height != 0 else 0
+                print(f"Bounding box aspect ratio: {aspect_ratio:.2f}")
                 
-                # Use the detected bounding box corners for the initial points
-                for i in range(min(4, len(object_points))):
-                    full_image_points[i] = image_points[i]
+                # Select the appropriate 3D points based on the view
+                # For simplicity, we're using the front face points, which is appropriate if
+                # the cuboid is being viewed from the front
+                model_points = np.array([
+                    [-2.5, -2.5, 1.5],  # Bottom left, front
+                    [2.5, -2.5, 1.5],   # Bottom right, front
+                    [2.5, 2.5, 1.5],    # Top right, front
+                    [-2.5, 2.5, 1.5]    # Top left, front
+                ], dtype=np.float32)
                 
-                # Solve PnP using the 3D object points from the CAD model
-                _, rvec, tvec = cv2.solvePnP(object_points, full_image_points, camera_matrix, dist_coeffs)
+                # Solve PnP using the front face points (should be visible in the image)
+                success, rvec, tvec = cv2.solvePnP(model_points, image_points, camera_matrix, dist_coeffs, flags=cv2.SOLVEPNP_ITERATIVE)
+                
+                if not success:
+                    print("PnP solver failed")
+                    continue
                 
                 # Convert rotation vector to rotation matrix
                 rotation_matrix, _ = cv2.Rodrigues(rvec)
                 
-                # Project 3D model points into 2D
-                projected_corners = project_3d_to_2d(object_points, rotation_matrix, tvec, camera_matrix, dist_coeffs)
+                # Project all vertices of the 3D model into 2D for visualization
+                projected_points = project_3d_to_2d(object_points, rvec, tvec, camera_matrix, dist_coeffs)
+                
+                # Draw the projected model points
+                for point in projected_points:
+                    cv2.circle(display_image, tuple(point.astype(int)), 3, (255, 0, 255), -1)  # Magenta points
+                
+                # Draw the cuboid edges
+                edges = [
+                    # Bottom face
+                    (0, 1), (1, 2), (2, 3), (3, 0),
+                    # Top face
+                    (4, 5), (5, 6), (6, 7), (7, 4),
+                    # Connecting edges
+                    (0, 4), (1, 5), (2, 6), (3, 7)
+                ]
+                
+                for edge in edges:
+                    p1 = tuple(projected_points[edge[0]].astype(int))
+                    p2 = tuple(projected_points[edge[1]].astype(int))
+                    cv2.line(display_image, p1, p2, (255, 165, 0), 1)  # Orange lines
                 
                 # Draw the axes (X, Y, Z)
-                axis_length = 0.05  # Adjust according to your cuboid's size
-                axes = np.array([[0, 0, 0], [axis_length, 0, 0], [0, axis_length, 0], [0, 0, axis_length]])  # X, Y, Z axes
-                projected_axes = project_3d_to_2d(axes, rotation_matrix, tvec, camera_matrix, dist_coeffs)
+                axis_length = 5.0  # 5mm axis length
+                axes = np.array([
+                    [0, 0, 0],
+                    [axis_length, 0, 0],
+                    [0, axis_length, 0],
+                    [0, 0, axis_length]
+                ], dtype=np.float32)  # Origin, X, Y, Z axes
                 
-                # Draw axes
-                cv2.line(display_image, tuple(projected_axes[0].astype(int)), tuple(projected_axes[1].astype(int)), (255, 0, 0), 3)  # X-axis
-                cv2.line(display_image, tuple(projected_axes[0].astype(int)), tuple(projected_axes[2].astype(int)), (0, 255, 0), 3)  # Y-axis
-                cv2.line(display_image, tuple(projected_axes[0].astype(int)), tuple(projected_axes[3].astype(int)), (0, 0, 255), 3)  # Z-axis
+                projected_axes = project_3d_to_2d(axes, rvec, tvec, camera_matrix, dist_coeffs)
                 
-                # Draw the center point
-                center_2d = projected_corners[0]  # This is an example; use the center if needed
-                cv2.circle(display_image, (int(center_2d[0]), int(center_2d[1])), 8, (0, 255, 255), -1)  # Yellow center
-
+                # Draw axes with thicker lines for better visibility
+                origin = tuple(projected_axes[0].astype(int))
+                cv2.line(display_image, origin, tuple(projected_axes[1].astype(int)), (0, 0, 255), 2)  # X-axis (red)
+                cv2.line(display_image, origin, tuple(projected_axes[2].astype(int)), (0, 255, 0), 2)  # Y-axis (green)
+                cv2.line(display_image, origin, tuple(projected_axes[3].astype(int)), (255, 0, 0), 2)  # Z-axis (blue)
+                
                 # Display translation and quaternion info
                 position = tvec.flatten()
                 rotation = R.from_rotvec(rvec.flatten())
                 quaternion = rotation.as_quat()  # Quaternion [x, y, z, w]
                 
+                # Format with better precision and more space
                 quat_text = f"Quaternion: ({quaternion[0]:.4f}, {quaternion[1]:.4f}, {quaternion[2]:.4f}, {quaternion[3]:.4f})"
                 position_text = f"Position: ({position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f})"
                 
