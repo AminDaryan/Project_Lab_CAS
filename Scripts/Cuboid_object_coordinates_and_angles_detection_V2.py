@@ -100,8 +100,8 @@ try:
 except Exception as e:
     print(f"Error loading CAD file: {e}")
     # Create a simple cuboid model based on corrected 5cm x 5cm x 3cm dimensions
-    # Half dimensions for a centered cuboid (in meters)
-    width, height, depth = 0.025, 0.025, 0.015  # 50cm/2, 50cm/2, 30cm/2
+    # Half dimensions for a centered cuboid (in mm)
+    width, height, depth = 25.0, 25.0, 15.0  # 50mm/2, 50mm/2, 30mm/2
     
     # Define 8 corners of the cuboid (centered at origin)
     vertices = np.array([
@@ -134,8 +134,12 @@ object_points = np.array(mesh.vertices, dtype=np.float32)
 # Print the cuboid model dimensions
 min_coords = np.min(object_points, axis=0)
 max_coords = np.max(object_points, axis=0)
-dimensions = (max_coords - min_coords) * 100000  # Convert back to mm for display
+dimensions = (max_coords - min_coords) * 100  # Convert back to mm for display
 print(f"Model dimensions: {dimensions[0]:.2f}cm x {dimensions[1]:.2f}cm x {dimensions[2]:.2f}cm")
+
+# Define the front face vertices (for better visualization)
+front_face_idx = [4, 5, 6, 7]  # Front face vertices (the ones where z is positive)
+front_face_points = object_points[front_face_idx]
 
 # Function to get the corner points from the detected bounding box
 def get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics):
@@ -186,8 +190,7 @@ def get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics):
     return corners_2d, center_depth
 
 # Function to project 3D points to 2D
-def project_3d_to_2d(object_points_input, rotation_v, translation_vector):
-    rotation_matrix = cv2.Rodrigues(rotation_v)[0]
+def project_3d_to_2d(object_points_input, rotation_matrix, translation_vector):
     projected_points, _ = cv2.projectPoints(object_points_input, rotation_matrix, translation_vector, camera_matrix, dist_coeffs)
     return projected_points.reshape(-1, 2)
 
@@ -197,7 +200,7 @@ try:
     # Set a retry counter and frame skip
     retry_count = 0
     max_retries = 2
-    frame_skip = 10  # Only process every 5th frame to speed up
+    frame_skip = 5  # Only process every 5th frame to speed up
     
     frame_counter = 0  # Frame counter to skip frames
     
@@ -271,46 +274,25 @@ try:
                 ], dtype=np.float32)
                 
                 # Try different PnP methods if one fails
-                pnp_methods = [cv2.SOLVEPNP_IPPE_SQUARE, cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_EPNP, cv2.SOLVEPNP_SQPNP]
+                pnp_methods = [cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_EPNP, cv2.SOLVEPNP_SQPNP]
                 success = False
                 
                 for method in pnp_methods:
                     try:
-                           # Initial PnP estimation
                         success, rvec, tvec = cv2.solvePnP(
-                            model_points,
-                            image_points,
-                            camera_matrix,
-                            dist_coeffs,
+                            model_points, 
+                            image_points, 
+                            camera_matrix, 
+                            dist_coeffs, 
                             flags=method
                         )
-
-                        if not success:
-                            print(f"PnP method {method} failed in initial estimation.")
-                            continue
-
-                        print(f"Initial solvePnP successful with method {method}")
-
-                        # Refinement using solvePnPRefineLM
-                        success, rvec, tvec = cv2.solvePnPRefineVVS(
-                            object_points,
-                            image_points,
-                            camera_matrix,
-                            dist_coeffs,
-                            rvec,
-                            tvec
-                        )
-
-                        print("Refined Rotation Vector (rvec):", rvec.flatten())
-                        print("Refined Translation Vector (tvec):", tvec.flatten())
                         
-
                         if success:
                             print(f"PnP solved with method {method}")
                             break
                     except Exception as e:
-                          print(f"PnP method {method} failed: {e}")
-                          continue
+                        print(f"PnP method {method} failed: {e}")
+                        continue
 
                 if not success:
                     print("All PnP methods failed")
@@ -320,6 +302,8 @@ try:
                 
                 # Project all vertices of the 3D model into 2D for visualization
                 projected_points = project_3d_to_2d(object_points, rvec, tvec)
+
+                print(f"object_points: {object_points}")
 
                 # First draw the projected model vertices (magenta points)
                 for i, point in enumerate(projected_points):
