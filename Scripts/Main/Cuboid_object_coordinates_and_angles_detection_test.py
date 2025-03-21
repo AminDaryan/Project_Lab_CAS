@@ -6,13 +6,15 @@ import numpy as np
 from ultralytics import YOLO
 from scipy.spatial.transform import Rotation as R
 import trimesh  # Import trimesh to handle CAD files
+import torch
 
 # Clear terminal before running anything
 os.system('cls' if os.name == 'nt' else 'clear')
 
 # Load YOLO model for detecting the cuboid
 model = YOLO("runs/detect/train/weights/best.pt")  # Your trained model path
-model.to('cuda')  # Use GPU for faster inference
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+model.to(device)
 
 # Function to safely initialize RealSense
 def initialize_realsense():
