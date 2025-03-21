@@ -65,11 +65,11 @@ def initialize_realsense():
         ])
         
         dist_coeffs = np.array([
-            color_intrinsics.coeffs[0],
-            color_intrinsics.coeffs[1],
-            color_intrinsics.coeffs[2],
-            color_intrinsics.coeffs[3],
-            0
+            color_intrinsics.coeffs[0],  # k1
+            color_intrinsics.coeffs[1],  # k2
+            color_intrinsics.coeffs[2],  # p1
+            color_intrinsics.coeffs[3],  # p2
+            color_intrinsics.coeffs[4]   # k3
         ]).reshape(5, 1)
         
         return pipeline, profile, camera_matrix, dist_coeffs
@@ -103,41 +103,34 @@ except Exception as e:
     print(f"Error loading CAD file: {e}")
     # Create a simple cuboid model based on corrected 5cm x 5cm x 3cm dimensions
     # Half dimensions for a centered cuboid (in meters)
-    width, height, depth = 0.025, 0.025, 0.015  # 50cm/2, 50cm/2, 30cm/2
+    width, height = 0.025, 0.025  # 50cm/2, 50cm/2
     
     # Define 8 corners of the cuboid (centered at origin)
     vertices = np.array([
-        [-width, -height, -depth],  # 0: back bottom left
-        [width, -height, -depth],   # 1: back bottom right
-        [width, height, -depth],    # 2: back top right
-        [-width, height, -depth],   # 3: back top left
-        [-width, -height, depth],   # 4: front bottom left
-        [width, -height, depth],    # 5: front bottom right
-        [width, height, depth],     # 6: front top right
-        [-width, height, depth]     # 7: front top left
+        [-width, -height],  # 0: bottom left
+        [width, -height],   # 1: bottom right
+        [width, height],    # 2: top right
+        [-width, height],   # 3: top left
     ])
     
-    # Define faces using triangle mesh (12 triangles for 6 faces)
+    # Define faces using 2 triangles to cover the square
     faces = np.array([
-        [0, 1, 2], [0, 2, 3],  # Back face
-        [4, 6, 5], [4, 7, 6],  # Front face
-        [0, 3, 7], [0, 7, 4],  # Left face
-        [1, 5, 6], [1, 6, 2],  # Right face
-        [3, 2, 6], [3, 6, 7],  # Top face
-        [0, 4, 5], [0, 5, 1]   # Bottom face
+        [0, 1, 2],   # First triangle
+        [0, 2, 3]    # Second triangle
     ])
+
     
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     print(f"Created cuboid model with dimensions 5cm x 5cm x 3cm")
 
-# Extract 3D vertices
+# Extract 2D vertices
 object_points = np.array(mesh.vertices, dtype=np.float32)
 
 # Print the cuboid model dimensions
 min_coords = np.min(object_points, axis=0)
 max_coords = np.max(object_points, axis=0)
-dimensions = (max_coords - min_coords) * 100000  # Convert back to mm for display
-print(f"Model dimensions: {dimensions[0]:.2f}cm x {dimensions[1]:.2f}cm x {dimensions[2]:.2f}cm")
+dimensions = (max_coords - min_coords) * 100  # Convert back to mm for display
+print(f"Model dimensions: {dimensions[0]:.2f}cm x {dimensions[1]:.2f}cm x")
 
 # Function to get the corner points from the detected bounding box
 def get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics):
@@ -187,8 +180,170 @@ def get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics):
     
     return corners_2d, center_depth
 
-# Function to project 3D points to 2D
-def project_3d_to_2d(object_points_input, rotation_v, translation_vector):
+def solve_pnp_with_plane_constraint(object_points, image_points, camera_matrix, dist_coeffs):
+    # Initial pose estimation
+    retval = cv2.solvePnP(
+        object_points, 
+        image_points,
+        camera_matrix, 
+        dist_coeffs,
+        flags=cv2.SOLVEPNP_ITERATIVE
+    )
+    
+    # In newer OpenCV versions, solvePnP returns a tuple with the first element being the return value
+    if isinstance(retval, tuple):
+        if len(retval) == 3:  # Newer OpenCV versions return (success, rvec, tvec)
+            success, rvec, tvec = retval
+        elif len(retval) == 2:  # Some versions might return (rvec, tvec) with success implied
+            rvec, tvec = retval
+            success = True
+        else:
+            print(f"Unexpected return format from solvePnP: {retval}")
+            return False, None, None
+    else:
+        # For older OpenCV versions that returned just a boolean
+        success = retval
+        # We don't have rvec and tvec in this case, so we can't proceed
+        return False, None, None
+    
+    if not success:
+        return False, None, None
+    
+    # Rest of the function remains the same...
+    # Convert rotation vector to rotation matrix
+    rotation_matrix, _ = cv2.Rodrigues(rvec)
+    
+    # Assume the y-axis should be pointing upward
+    up_vector = np.array([0, 1, 0])  # Assuming Y is up, adjust as needed
+    y_column = rotation_matrix[:, 1]
+    
+    # Ensure Y axis is close to vertical
+    angle = np.arccos(np.clip(np.dot(y_column, up_vector), -1.0, 1.0))
+    
+    if angle > np.pi/4:  # If more than 45 degrees off, adjust
+        # Create a rotation that would align y_column with up_vector
+        correction_axis = np.cross(y_column, up_vector)
+        correction_axis = correction_axis / np.linalg.norm(correction_axis)
+        correction_angle = angle
+        correction_rotvec = correction_axis * correction_angle
+        
+        # Apply correction to rotation matrix
+        correction_matrix, _ = cv2.Rodrigues(correction_rotvec)
+        corrected_rotation = np.dot(correction_matrix, rotation_matrix)
+        
+        # Convert back to rotation vector
+        rvec, _ = cv2.Rodrigues(corrected_rotation)
+    
+    # Refine with the constraint in mind
+    refined = cv2.solvePnPRefineLM(
+        object_points,
+        image_points,
+        camera_matrix,
+        dist_coeffs,
+        rvec,
+        tvec
+    )
+    
+    # Handle the return value from refinement similarly
+    if isinstance(refined, tuple):
+        if len(refined) == 3:
+            success, rvec, tvec = refined
+        elif len(refined) == 2:
+            rvec, tvec = refined
+            success = True
+        else:
+            print(f"Unexpected return format from solvePnPRefineLM: {refined}")
+            return False, None, None
+    else:
+        success = refined
+    
+    return success, rvec, tvec
+
+def detect_floor_plane(depth_frame, intrinsics):
+    # Convert depth to point cloud
+    points = []
+    heights = []
+    
+    # Sample points from the lower part of the image (likely floor)
+    height, width = depth_frame.get_height(), depth_frame.get_width()
+    for y in range(height-100, height, 10):  # Bottom 100 pixels, every 10th pixel
+        for x in range(0, width, 10):        # Every 10th pixel horizontally
+            depth = depth_frame.get_distance(x, y)
+            if depth > 0:
+                # Deproject to 3D
+                point = rs.rs2_deproject_pixel_to_point(intrinsics, [x, y], depth)
+                points.append(point)
+                heights.append(point[1])  # Y-coordinate is height in camera space
+    
+    if not points:
+        return None
+        
+    # Find the most common height (floor level)
+    hist, bin_edges = np.histogram(heights, bins=50)
+    floor_height = bin_edges[np.argmax(hist)]
+    
+    # Now you know your floor plane is approximately at y = floor_height
+    return floor_height
+
+def detect_corners_in_roi(color_image, x1, y1, x2, y2):
+    # Extract ROI from the bounding box
+    roi = color_image[y1:y2, x1:x2]
+    
+    # Convert to grayscale
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    
+    # Apply adaptive thresholding
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                  cv2.THRESH_BINARY, 11, 2)
+    
+    # Find contours
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if not contours:
+        return None
+        
+    # Find the largest contour
+    largest_contour = max(contours, key=cv2.contourArea)
+    
+    # Approximate the contour to find corners
+    epsilon = 0.02 * cv2.arcLength(largest_contour, True)
+    approx = cv2.approxPolyDP(largest_contour, epsilon, True)
+    
+    # If we get 4 points, we probably have the corners
+    if len(approx) == 4:
+        # Convert back to original image coordinates
+        corners = approx.reshape(-1, 2) + np.array([x1, y1])
+        
+        # Ensure corners is a numpy array with the right shape
+        corners = np.array(corners, dtype=np.float32)
+        
+        # Print for debugging
+        print(f"Found corners: {corners.shape}, data: {corners}")
+        
+        return corners
+    else:
+        print(f"Approximation yielded {len(approx)} points instead of 4")
+    
+    return None
+def create_full_cuboid_model(width=0.05, height=0.05, depth=0.03):
+    """Create a full 8-point cuboid model centered at origin."""
+    w, h, d = width/2, height/2, depth/2
+    
+    # All 8 corners of the cuboid
+    points = np.array([
+        [-w, -h, -d],  # 0: back bottom left
+        [w, -h, -d],   # 1: back bottom right
+        [w, h, -d],    # 2: back top right
+        [-w, h, -d],   # 3: back top left
+        [-w, -h, d],   # 4: front bottom left
+        [w, -h, d],    # 5: front bottom right
+        [w, h, d],     # 6: front top right
+        [-w, h, d]     # 7: front top left
+    ], dtype=np.float32)
+    
+    return points
+
+def project_to_2d(object_points_input, rotation_v, translation_vector):
     rotation_matrix = cv2.Rodrigues(rotation_v)[0]
     projected_points, _ = cv2.projectPoints(object_points_input, rotation_matrix, translation_vector, camera_matrix, dist_coeffs)
     return projected_points.reshape(-1, 2)
@@ -262,57 +417,105 @@ try:
                 bbox_height = y2 - y1
                 aspect_ratio = bbox_width / bbox_height if bbox_height != 0 else 0
                 print(f"Bounding box aspect ratio: {aspect_ratio:.2f}")
-                
-                # Define model points for PnP - use the front face of the cuboid
-                # Using 5cm x 5cm x 3cm dimensions (half dimensions in meters)
-                model_points = np.array([
-                    [-0.025, -0.025, 0.015],  # Front bottom left
-                    [0.025, -0.025, 0.015],   # Front bottom right
-                    [0.025, 0.025, 0.015],    # Front top right
-                    [-0.025, 0.025, 0.015]    # Front top left
-                ], dtype=np.float32)
-                
-                # Try different PnP methods if one fails
-                pnp_methods = [cv2.SOLVEPNP_IPPE_SQUARE, cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_EPNP, cv2.SOLVEPNP_SQPNP]
-                success = False
-                
-                for method in pnp_methods:
-                    try:
-                           # Initial PnP estimation
+                # First, try to detect better corners using contour detection
+                better_corners = detect_corners_in_roi(color_image, x1, y1, x2, y2)
+
+                # Use the full cuboid model
+                full_cuboid = create_full_cuboid_model(0.05, 0.05, 0.03)  # 5cm x 5cm x 3cm
+
+                if better_corners is not None and len(better_corners) == 4:
+                    print("Using contour-detected corners for pose estimation")
+                    image_points = better_corners
+                    
+                    # Add this validation
+                    if len(image_points) != 4:
+                        print(f"Invalid number of corner points: {len(image_points)}, expected 4")
+                        continue
+                        
+                    # Rest of the code
+                    
+                    # Define model points for the detected face (assuming front face)
+                    model_points = np.array([
+                        [-0.025, -0.025, 0.015],  # Front bottom left
+                        [0.025, -0.025, 0.015],   # Front bottom right
+                        [0.025, 0.025, 0.015],    # Front top right
+                        [-0.025, 0.025, 0.015]    # Front top left
+                    ], dtype=np.float32)
+                    
+                    # Use plane-constrained PnP
+                    success, rvec, tvec = solve_pnp_with_plane_constraint(
+                        model_points,
+                        image_points,
+                        camera_matrix,
+                        dist_coeffs
+                    )
+                    
+                    if not success:
+                        print("Plane-constrained PnP failed, falling back to standard method")
+                        # Fall back to your original method
                         success, rvec, tvec = cv2.solvePnP(
                             model_points,
                             image_points,
                             camera_matrix,
                             dist_coeffs,
-                            flags=method
+                            flags=cv2.SOLVEPNP_ITERATIVE
                         )
-
-                        if not success:
-                            print(f"PnP method {method} failed in initial estimation.")
-                            continue
-
-                        print(f"Initial solvePnP successful with method {method}")
-
-                        # Refinement using solvePnPRefineLM
-                        success, rvec, tvec = cv2.solvePnPRefineVVS(
-                            object_points,
-                            image_points,
-                            camera_matrix,
-                            dist_coeffs,
-                            rvec,
-                            tvec
-                        )
-
-                        print("Refined Rotation Vector (rvec):", rvec.flatten())
-                        print("Refined Translation Vector (tvec):", tvec.flatten())
+                else:
+                    print("Using bounding box corners with multiple PnP methods")
+                    # Your original corner detection and PnP methods
+                    corner_data = get_corner_points(x1, y1, x2, y2, depth_frame, color_intrinsics)
+                    if corner_data is None:
+                        print("Could not get valid depth measurements for this detection")
+                        continue
                         
+                    image_points, depth = corner_data
+                    
+                    # Define model points for PnP - use the front face of the cuboid
+                    model_points = np.array([
+                        [-0.025, -0.025, 0.015],  # Front bottom left
+                        [0.025, -0.025, 0.015],   # Front bottom right
+                        [0.025, 0.025, 0.015],    # Front top right
+                        [-0.025, 0.025, 0.015]    # Front top left
+                    ], dtype=np.float32)
+                    
+                    # Try different PnP methods if one fails
+                    pnp_methods = [cv2.SOLVEPNP_IPPE_SQUARE, cv2.SOLVEPNP_ITERATIVE, cv2.SOLVEPNP_EPNP, cv2.SOLVEPNP_SQPNP]
+                    success = False
+                    
+                    for method in pnp_methods:
+                        try:
+                            # Initial PnP estimation
+                            success, rvec, tvec = cv2.solvePnP(
+                                model_points,
+                                image_points,
+                                camera_matrix,
+                                dist_coeffs,
+                                flags=method
+                            )
 
-                        if success:
-                            print(f"PnP solved with method {method}")
-                            break
-                    except Exception as e:
-                          print(f"PnP method {method} failed: {e}")
-                          continue
+                            if not success:
+                                print(f"PnP method {method} failed in initial estimation.")
+                                continue
+
+                            print(f"Initial solvePnP successful with method {method}")
+
+                            # Try plane-constrained refinement
+                            success, rvec, tvec = solve_pnp_with_plane_constraint(
+                                model_points,
+                                image_points,
+                                camera_matrix,
+                                dist_coeffs
+                            )
+
+                            print("Refined Rotation Vector (rvec):", rvec.flatten())
+                            print("Refined Translation Vector (tvec):", tvec.flatten())
+                            
+                            if success:
+                                print(f"PnP solved with method {method} and plane constraint")
+                                break
+                        except Exception as e:
+                            print(f"PnP method {method} failed: {e}")
+                            continue
 
                 if not success:
                     print("All PnP methods failed")
@@ -320,8 +523,8 @@ try:
                 
                 print(f"PnP solver result - success: {success}, rotation: {rvec.flatten()}, translation: {tvec.flatten()}")
                 
-                # Project all vertices of the 3D model into 2D for visualization
-                projected_points = project_3d_to_2d(object_points, rvec, tvec)
+                # Project all vertices of the 2D model into 2D for visualization
+                projected_points = project_to_2d(model_points, rvec, tvec)
 
                 # First draw the projected model vertices (magenta points)
                 for i, point in enumerate(projected_points):
@@ -332,32 +535,34 @@ try:
                         # Optional: label points
                         cv2.putText(display_image, str(i), point_int, cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
 
-                # FIRST draw the yellow wireframe cuboid (draw this BEFORE axes)
-                yellow_cuboid_color = (0, 255, 255)  # Pure yellow in BGR
-                yellow_cuboid_thickness = 2  # Thicker lines for visibility
-
-                # Define the edges of the cuboid
-                edges = [
-                    # Bottom face
-                    (0, 1), (1, 2), (2, 3), (3, 0),
-                    # Top face
-                    (4, 5), (5, 6), (6, 7), (7, 4),
-                    # Connecting edges
-                    (0, 4), (1, 5), (2, 6), (3, 7)
-                ]
-
-                # Draw the yellow wireframe cuboid with guaranteed high visibility
-                for edge in edges:
-                    try:
-                        p1 = tuple(np.round(projected_points[edge[0]]).astype(int))
-                        p2 = tuple(np.round(projected_points[edge[1]]).astype(int))
-                        # Check if points are within image boundaries
-                        if (0 <= p1[0] < display_image.shape[1] and 0 <= p1[1] < display_image.shape[0] and
-                            0 <= p2[0] < display_image.shape[1] and 0 <= p2[1] < display_image.shape[0]):
-                            cv2.line(display_image, p1, p2, yellow_cuboid_color, yellow_cuboid_thickness)
-                    except Exception as e:
-                        print(f"Error drawing yellow cuboid edge {edge}: {e}")
-
+               # Visualize the full cuboid if the pose was estimated successfully
+                if success:
+                    # Get all 8 corners of the cuboid for visualization
+                    all_cuboid_points = create_full_cuboid_model(0.05, 0.05, 0.03)
+                    projected_cuboid = project_to_2d(all_cuboid_points, rvec, tvec)
+                    
+                    # Define the edges connecting the corners of the cuboid
+                    cuboid_edges = [
+                        # Bottom face
+                        (0, 1), (1, 2), (2, 3), (3, 0),
+                        # Top face
+                        (4, 5), (5, 6), (6, 7), (7, 4),
+                        # Connecting edges
+                        (0, 4), (1, 5), (2, 6), (3, 7)
+                    ]
+                    
+                    # Draw the full cuboid wireframe
+                    for edge in cuboid_edges:
+                        try:
+                            p1 = tuple(np.round(projected_cuboid[edge[0]]).astype(int))
+                            p2 = tuple(np.round(projected_cuboid[edge[1]]).astype(int))
+                            # Check if points are within image boundaries
+                            if (0 <= p1[0] < display_image.shape[1] and 0 <= p1[1] < display_image.shape[0] and
+                                0 <= p2[0] < display_image.shape[1] and 0 <= p2[1] < display_image.shape[0]):
+                                cv2.line(display_image, p1, p2, (0, 255, 255), 2)  # Yellow lines
+                        except Exception as e:
+                            print(f"Error drawing cuboid edge {edge}: {e}")
+                    
                 # THEN draw the axes (after the yellow cuboid)
                 axis_length = 0.1  # 10cm axis length for better visibility with a 5cm object
                 axes = np.array([
@@ -367,7 +572,7 @@ try:
                     [0, 0, axis_length]   # Z-axis
                 ], dtype=np.float32)
 
-                projected_axes = project_3d_to_2d(axes, rvec, tvec)
+                projected_axes = project_to_2d(axes, rvec, tvec)
 
                 # Draw axes with thicker lines for better visibility
                 origin = tuple(projected_axes[0].astype(int))
