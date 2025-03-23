@@ -125,6 +125,7 @@ except Exception as e:
         [0, 1, 2],   # First triangle
         [0, 2, 3]    # Second triangle
     ])
+
     
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     print(f"Created cuboid model with dimensions 5cm x 5cm x 3cm")
@@ -271,7 +272,6 @@ def detect_corners_in_roi(color_image, x1, y1, x2, y2):
         print(f"Approximation yielded {len(approx)} points instead of 4")
     
     return None
-
 def create_full_cuboid_model(width=0.05, height=0.05, depth=0.03):
     """Create a full 8-point cuboid model centered at origin."""
     w, h, d = width/2, height/2, depth/2

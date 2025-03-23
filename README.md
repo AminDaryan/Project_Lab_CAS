@@ -28,6 +28,6 @@
 *15.03.2025*
 - Using [train_model file](train_model.py) the images recieved in files: train, valid and test from roboflow.com are trained.
 
-**Todo**:
-
-- Work on getting object coordinates using the camera and OpenCV
+*21.03.2025*
+- In [Cuboid_object_coordinates_and_angles_detection_test file](Cuboid_object_coordinates_and_angles_detection_test.py) using [Claud.io](https://claude.ai/chat/6d9affa4-3a98-4140-9611-01f581c6f9ca) and some papers, plus understanding the code and tweaking it, I was able to make the code detect the cubes rotation.
+- The camera intrinsics can be fetched from the camera itself.
