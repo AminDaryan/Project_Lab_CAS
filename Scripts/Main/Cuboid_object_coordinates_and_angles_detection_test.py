@@ -19,9 +19,6 @@ model = YOLO("runs/detect/train/weights/best.pt")  # Your trained model path
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model.to(device)
 
-# Fixed Z distance to object
-FIXED_Z_DISTANCE = 0.475  # 47.5 cm in meters
-
 # Function to safely initialize RealSense
 def initialize_realsense():
     ctx = rs.context()
@@ -227,8 +224,6 @@ def solve_pnp_with_plane_constraint(object_points, image_points, camera_matrix, 
     else:
         success = refined
     
-    # Force Z to be the fixed distance
-    tvec[2][0] = FIXED_Z_DISTANCE
     
     return success, rvec, tvec
 
@@ -272,6 +267,7 @@ def detect_corners_in_roi(color_image, x1, y1, x2, y2):
         print(f"Approximation yielded {len(approx)} points instead of 4")
     
     return None
+
 def create_full_cuboid_model(width=0.05, height=0.05, depth=0.03):
     """Create a full 8-point cuboid model centered at origin."""
     w, h, d = width/2, height/2, depth/2
@@ -444,9 +440,6 @@ def average_positions(positions):
     # Calculate mean of filtered positions
     avg_position = np.mean(filtered_positions, axis=0)
     
-    # Always enforce fixed Z
-    avg_position[2] = FIXED_Z_DISTANCE
-    
     return avg_position
 
 # Function to write the average quaternion to a text file
@@ -462,8 +455,6 @@ def write_quaternion_to_file(quaternion, position):
             
             if position is not None:
                 # Format position with 6 decimal places
-                # Force Z to fixed value
-                position[2] = FIXED_Z_DISTANCE
                 pos_str = f"Average Position: ({position[0]:.6f}, {position[1]:.6f}, {position[2]:.6f})"
                 f.write(pos_str + "\n")
             
@@ -599,9 +590,6 @@ try:
                                 flags=cv2.SOLVEPNP_ITERATIVE
                             )
                             
-                            # Force Z to fixed distance
-                            if success:
-                                tvec[2][0] = FIXED_Z_DISTANCE
                     else:
                         print("Using bounding box corners with multiple PnP methods")
                         # Use bounding box corners
@@ -636,8 +624,6 @@ try:
 
                                 print(f"Initial solvePnP successful with method {method}")
                                 
-                                # Force Z to fixed distance
-                                tvec[2][0] = FIXED_Z_DISTANCE
 
                                 # Try plane-constrained refinement
                                 success, rvec, tvec = solve_pnp_with_plane_constraint(
