@@ -3,7 +3,7 @@
 - [make_cuboid.py](Scripts\make_cuboid.py): In this file, a 3D model of the target cuboid is generated and saved as "cuboid.stl".
 - [train_model.py](Scripts\train_model.py):  In this file, images from "datasets/Target_Cube_Object_Detection_3" are trained using the YOLO library.
 - [video_to_dataset_pics.py](Scripts\video_to_dataset_pics.py):  In this file, the camera takes a 10 second video and thereafter generates images which they are the video splitted into frames. These frames (images) will be used to train the model. The video is taken by the user from the cuboid object from different angles ideally.
-- The the data samples (Images) are annotated and trained in an external website called [roboflow.com](roboflow.com). The trained model then is generated and can be downloaded.
+- The the data samples (Images) are annotated and trained in an external website called [roboflow.com](roboflow.com). The trained model then is generated and can be downloaded. The projects trained model can be found in [Target_Cube_Object_Detection](datasets\Target_Cube_Object_Detection) folder.
 - [Cuboid_object_coordinates_and_angles_detection.py](Scripts\Main\Cuboid_object_coordinates_and_angles_detection.py):  In this file, the code uses the generated model to detect the object real-time. The code detects the object angle and position and then converts it into quaternian. This can also be seen when the code is run; On the real-time video window opened after the code is run, a square will surround the target cuboid object when the object is detected.
 
 ### How does the object detection code work
