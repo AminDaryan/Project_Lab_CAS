@@ -1,8 +1,8 @@
 
-Target Cube Object Detection - v2 2025-03-13 4:37pm
+Target Cube Object Detection - v4 2025-03-16 4:21pm
 ==============================
 
-This dataset was exported via roboflow.com on March 13, 2025 at 4:04 PM GMT
+This dataset was exported via roboflow.com on March 16, 2025 at 3:22 PM GMT
 
 Roboflow is an end-to-end computer vision platform that helps you
 * collaborate with your team on computer vision projects
@@ -17,7 +17,7 @@ visit https://github.com/roboflow/notebooks
 
 To find over 100k other datasets and pre-trained models, visit https://universe.roboflow.com
 
-The dataset includes 118 images.
+The dataset includes 872 images.
 Cube are annotated in YOLOv11 format.
 
 The following pre-processing was applied to each image:
